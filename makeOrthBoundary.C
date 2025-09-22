@@ -1,6 +1,7 @@
 #include "argList.H"
 #include "Time.H"
 #include "polyTopoChange.H"
+#include "wedgePolyPatch.H"
 #include "cellSet.H"
 #include "pointField.H"
 
@@ -53,15 +54,23 @@ int main(int argc, char *argv[])
     bitSet vertOnPatch(mesh.nPoints());
     /* const labelList allPatches = mesh.boundaryMesh(); */
 
-    for (const label patchi : mesh.boundaryMesh().patchID())
+    labelList wedgePatches;
+
+    // for (const label patchi : mesh.boundaryMesh().patchID())
+    forAll(mesh.boundaryMesh(), patchi)
     {
         // Check if patch type is wedge, symmetry, empty or cyclic
+        Info << "Checking patch " << mesh.boundaryMesh()[patchi].name() << " of type " << mesh.boundaryMesh()[patchi].type() << endl;
         
         if (mesh.boundaryMesh()[patchi].type() == "wedge"
             || mesh.boundaryMesh()[patchi].type() == "symmetry"
             || mesh.boundaryMesh()[patchi].type() == "empty"
             || mesh.boundaryMesh()[patchi].type() == "cyclic")
         {
+            if (mesh.boundaryMesh()[patchi].type() == "wedge")
+            {
+              wedgePatches.append(patchi);
+            }
             continue;
         }
 
@@ -71,6 +80,8 @@ int main(int argc, char *argv[])
         vertOnPatch.set(meshPoints);
 
     }
+
+    Info << "wedgePatches: " << wedgePatches << endl;
 
     // Mark all mesh points on the excluded patches
          // Get the list of patches to process
@@ -168,10 +179,36 @@ int main(int argc, char *argv[])
                 /* mesh.points()[meshPointi] = newPoint; */
                 newPoints[meshPointi] = mesh.points()[meshPointi] - movement;
             }
+
             
-            
+        }
+    }
+    forAll(wedgePatches, wpi)
+    {
+      label patchi = wedgePatches[wpi];
+      Info << "Constraining wedge patch " << patchi << endl;
+      forAll(newPoints, npointi)
+      {
+        // Check if npointi is in the wedge patch:
+        if (mesh.boundaryMesh()[patchi].meshPoints().found(npointi))
+        {
+          const wedgePolyPatch& wpp = refCast<const wedgePolyPatch>(mesh.boundaryMesh()[patchi]);
+          const vector n_ = wpp.n();          // wedge normal direction
+          // const vector a_ = wpp.axis();       // wedge axis
+          // scalar cosAngle = wpp.cosAngle();   // cos of wedge angle
+
+          // Project new point in the n direction such that the angle with the axis is the same as the wedge:
+          vector pointRel = newPoints[npointi] - mesh.points()[npointi];
+
+          // Remove the component in the normal direction
+
+          vector pointRel_n = (pointRel & n_) * n_;
+
+          // Update the new point:
+          newPoints[npointi] -= pointRel_n;
 
         }
+      }
     }
     mesh.movePoints(newPoints);
 
